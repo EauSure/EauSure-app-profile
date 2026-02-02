@@ -103,6 +103,16 @@ const authenticateToken = (req, res, next) => {
 };
 
 // --- 4. API ROUTES ---
+app.get('/api/ping', (req, res) => {
+  res.json({
+    ok: true,
+    originalUrl: req.originalUrl,
+    path: req.path,
+    method: req.method,
+    hasAuthHeader: !!req.headers.authorization,
+  });
+});
+
 
 // GET: Retrieve or auto-create profile
 app.get('/api/profile', authenticateToken, async (req, res) => {
