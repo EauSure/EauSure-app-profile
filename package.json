@@ -1,20 +1,16 @@
 {
-  "name": "eausure_app_login",
+  "name": "eausure-api",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "description": "User profile API for EauSûre",
+  "main": "server.js",
   "type": "commonjs",
+  "scripts": {
+    "dev": "node server.js"
+  },
   "dependencies": {
-    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
-    "express": "^5.2.1",
+    "express": "^4.21.2",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.1.5"
   }
