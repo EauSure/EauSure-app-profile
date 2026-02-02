@@ -60,6 +60,23 @@ const UserProfileSchema = new mongoose.Schema(
     collection: 'userProfiles' // 👈 EXACT collection name
   }
 );
+const UserSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, unique: true },
+    name: { type: String, default: "" },
+    avatar: { type: String, default: "" },
+    image: { type: String, default: "" },
+    organization: { type: String, default: "" },
+    phone: { type: String, default: "" },
+    role: { type: String, default: "user" },
+    isProfileComplete: { type: Boolean, default: false },
+    lastLogin: { type: Date }
+  },
+  { timestamps: true, collection: "users" }
+);
+
+const User =
+  mongoose.models.User || mongoose.model("User", UserSchema);
 
 // 🔐 Enforce 1 profile per user at DB level
 UserProfileSchema.index({ userId: 1 }, { unique: true });
@@ -108,6 +125,94 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+app.get('/api/me', authenticateToken, async (req, res) => {
+  await connectDB();
+
+  try {
+    const email = req.userIdentifier;
+
+    const user = await User.findOne({ email }).lean();
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    let profile = await UserProfile.findOne({ userId: email }).lean();
+    if (!profile) {
+      profile = await UserProfile.create({ userId: email });
+      profile = profile.toObject();
+    }
+
+    // MERGE (users wins for identity fields)
+    return res.json({
+      email: user.email,
+      name: user.name || "",
+      avatar: user.avatar || "",
+      image: user.image || "",
+      organization: user.organization || profile.organization || "",
+      phone: user.phone || profile.phone || "",
+      timezone: profile.timezone || "Africa/Tunis",
+      preferences: profile.preferences || {}
+    });
+
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/me', authenticateToken, async (req, res) => {
+  await connectDB();
+
+  try {
+    const email = req.userIdentifier;
+
+    // Allowed updates for users collection
+    const userUpdates = {};
+    if (typeof req.body.name === "string") userUpdates.name = req.body.name;
+    if (typeof req.body.avatar === "string") userUpdates.avatar = req.body.avatar;
+    if (typeof req.body.image === "string") userUpdates.image = req.body.image;
+    if (typeof req.body.organization === "string") userUpdates.organization = req.body.organization;
+    if (typeof req.body.phone === "string") userUpdates.phone = req.body.phone;
+
+    // Allowed updates for userProfiles collection
+    const profileUpdates = {};
+    if (typeof req.body.timezone === "string") profileUpdates.timezone = req.body.timezone;
+    if (req.body.preferences && typeof req.body.preferences === "object") {
+      profileUpdates.preferences = req.body.preferences;
+    }
+
+    // Update user (must exist)
+    const user = await User.findOneAndUpdate(
+      { email },
+      { $set: userUpdates },
+      { new: true }
+    ).lean();
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Upsert profile
+    const profile = await UserProfile.findOneAndUpdate(
+      { userId: email },
+      { $set: profileUpdates },
+      { new: true, upsert: true, runValidators: true }
+    ).lean();
+
+    // Return merged
+    return res.json({
+      email: user.email,
+      name: user.name || "",
+      avatar: user.avatar || "",
+      image: user.image || "",
+      organization: user.organization || profile.organization || "",
+      phone: user.phone || profile.phone || "",
+      timezone: profile.timezone || "Africa/Tunis",
+      preferences: profile.preferences || {}
+    });
+
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+});
+
+
 
 // PUT: Update profile
 app.put('/api/profile', authenticateToken, async (req, res) => {
