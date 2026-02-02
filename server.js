@@ -109,7 +109,7 @@ async function connectDB(reqId) {
 // 2) SCHEMAS
 // ------------------------------
 
-// IMPORTANT: add fields you actually use in settings toggles
+// UPDATED: Complete schema with all settings fields
 const UserProfileSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true }, // email or auth ID
@@ -119,21 +119,49 @@ const UserProfileSchema = new mongoose.Schema(
     phone: { type: String, default: "" },
     timezone: { type: String, default: "Africa/Tunis" },
     preferences: {
+      // Theme preferences
+      theme: { 
+        type: String, 
+        enum: ['light', 'dark', 'auto'], 
+        default: 'auto' 
+      },
+      
+      // Notifications - matching your JSON structure
       notifications: {
-        // 👇 add missing toggles so they persist
         push: { type: Boolean, default: true },
         fall_detection: { type: Boolean, default: true },
-
         emailAlerts: { type: Boolean, default: true },
         criticalOnly: { type: Boolean, default: false },
         dailySummary: { type: Boolean, default: true },
         maintenanceReminders: { type: Boolean, default: true }
       },
+      
+      // Units - complete with both temperature and distance
       units: {
-        temperature: { type: String, enum: ['celsius', 'fahrenheit'], default: 'celsius' },
-        distance: { type: String, enum: ['metric', 'imperial'], default: 'metric' }
+        temperature: { 
+          type: String, 
+          enum: ['celsius', 'fahrenheit'], 
+          default: 'celsius' 
+        },
+        distance: { 
+          type: String, 
+          enum: ['metric', 'imperial'], 
+          default: 'metric' 
+        }
       },
-      language: { type: String, default: "en" }
+      
+      // Security settings
+      security: {
+        biometric: { type: Boolean, default: false },
+        twoFactor: { type: Boolean, default: false }
+      },
+      
+      // Language
+      language: { 
+        type: String, 
+        enum: ['en', 'fr', 'ar'], 
+        default: "en" 
+      }
     }
   },
   {
@@ -283,7 +311,7 @@ app.get('/api/profile', authenticateToken, async (req, res) => {
   }
 });
 
-// GET: merged user + profile
+// GET: merged user + profile with complete preferences
 app.get('/api/me', authenticateToken, async (req, res) => {
   const reqId = req.reqId;
   await connectDB(reqId);
@@ -321,23 +349,44 @@ app.get('/api/me', authenticateToken, async (req, res) => {
       profile = profile.toObject();
     }
 
-    // MERGE
+    // MERGE with complete preferences structure
     const merged = {
       email: user.email,
       name: user.name || "",
-      avatar: user.avatar || "",
-      image: user.image || "",
+      avatar: user.avatar || user.image || "",
+      image: user.image || user.avatar || "",
       organization: user.organization || profile.organization || "",
       phone: user.phone || profile.phone || "",
       timezone: profile.timezone || "Africa/Tunis",
-      preferences: profile.preferences || {}
+      preferences: {
+        theme: profile.preferences?.theme || 'auto',
+        language: profile.preferences?.language || 'en',
+        notifications: {
+          push: profile.preferences?.notifications?.push ?? true,
+          emailAlerts: profile.preferences?.notifications?.emailAlerts ?? true,
+          criticalOnly: profile.preferences?.notifications?.criticalOnly ?? false,
+          fall_detection: profile.preferences?.notifications?.fall_detection ?? true,
+          dailySummary: profile.preferences?.notifications?.dailySummary ?? true,
+          maintenanceReminders: profile.preferences?.notifications?.maintenanceReminders ?? true,
+        },
+        units: {
+          temperature: profile.preferences?.units?.temperature || 'celsius',
+          distance: profile.preferences?.units?.distance || 'metric',
+        },
+        security: {
+          biometric: profile.preferences?.security?.biometric ?? false,
+          twoFactor: profile.preferences?.security?.twoFactor ?? false,
+        }
+      }
     };
 
     log('info', reqId, '✅ /api/me success', {
       email: merged.email,
       hasProfile: true,
+      theme: merged.preferences.theme,
       prefsKeys: Object.keys(merged.preferences || {}),
       notifKeys: Object.keys(merged.preferences?.notifications || {}),
+      unitsKeys: Object.keys(merged.preferences?.units || {}),
     });
 
     return res.json(merged);
@@ -347,7 +396,7 @@ app.get('/api/me', authenticateToken, async (req, res) => {
   }
 });
 
-// PUT: update user + profile (merged)
+// PUT: update user + profile (merged) with complete preferences support
 app.put('/api/me', authenticateToken, async (req, res) => {
   const reqId = req.reqId;
   await connectDB(reqId);
@@ -385,8 +434,55 @@ app.put('/api/me', authenticateToken, async (req, res) => {
     // Allowed updates for userProfiles collection
     const profileUpdates = {};
     if (typeof req.body.timezone === "string") profileUpdates.timezone = req.body.timezone;
+    
+    // Handle complete preferences object
     if (req.body.preferences && typeof req.body.preferences === "object") {
-      profileUpdates.preferences = req.body.preferences;
+      const prefs = req.body.preferences;
+      
+      // Theme
+      if (prefs.theme && ['light', 'dark', 'auto'].includes(prefs.theme)) {
+        profileUpdates['preferences.theme'] = prefs.theme;
+      }
+      
+      // Language
+      if (prefs.language && ['en', 'fr', 'ar'].includes(prefs.language)) {
+        profileUpdates['preferences.language'] = prefs.language;
+      }
+      
+      // Notifications
+      if (prefs.notifications && typeof prefs.notifications === "object") {
+        const notifs = prefs.notifications;
+        if (typeof notifs.push === 'boolean') 
+          profileUpdates['preferences.notifications.push'] = notifs.push;
+        if (typeof notifs.emailAlerts === 'boolean') 
+          profileUpdates['preferences.notifications.emailAlerts'] = notifs.emailAlerts;
+        if (typeof notifs.criticalOnly === 'boolean') 
+          profileUpdates['preferences.notifications.criticalOnly'] = notifs.criticalOnly;
+        if (typeof notifs.fall_detection === 'boolean') 
+          profileUpdates['preferences.notifications.fall_detection'] = notifs.fall_detection;
+        if (typeof notifs.dailySummary === 'boolean') 
+          profileUpdates['preferences.notifications.dailySummary'] = notifs.dailySummary;
+        if (typeof notifs.maintenanceReminders === 'boolean') 
+          profileUpdates['preferences.notifications.maintenanceReminders'] = notifs.maintenanceReminders;
+      }
+      
+      // Units
+      if (prefs.units && typeof prefs.units === "object") {
+        const units = prefs.units;
+        if (units.temperature && ['celsius', 'fahrenheit'].includes(units.temperature)) 
+          profileUpdates['preferences.units.temperature'] = units.temperature;
+        if (units.distance && ['metric', 'imperial'].includes(units.distance)) 
+          profileUpdates['preferences.units.distance'] = units.distance;
+      }
+      
+      // Security
+      if (prefs.security && typeof prefs.security === "object") {
+        const security = prefs.security;
+        if (typeof security.biometric === 'boolean') 
+          profileUpdates['preferences.security.biometric'] = security.biometric;
+        if (typeof security.twoFactor === 'boolean') 
+          profileUpdates['preferences.security.twoFactor'] = security.twoFactor;
+      }
     }
 
     log('debug', reqId, '🧩 Computed updates', { userUpdates, profileUpdates });
@@ -409,20 +505,42 @@ app.put('/api/me', authenticateToken, async (req, res) => {
 
     log('debug', reqId, '✏️ Profile upserted', { updated: !!profile });
 
+    // Return merged result
     const merged = {
       email: user.email,
       name: user.name || "",
-      avatar: user.avatar || "",
-      image: user.image || "",
+      avatar: user.avatar || user.image || "",
+      image: user.image || user.avatar || "",
       organization: user.organization || profile.organization || "",
       phone: user.phone || profile.phone || "",
       timezone: profile.timezone || "Africa/Tunis",
-      preferences: profile.preferences || {}
+      preferences: {
+        theme: profile.preferences?.theme || 'auto',
+        language: profile.preferences?.language || 'en',
+        notifications: {
+          push: profile.preferences?.notifications?.push ?? true,
+          emailAlerts: profile.preferences?.notifications?.emailAlerts ?? true,
+          criticalOnly: profile.preferences?.notifications?.criticalOnly ?? false,
+          fall_detection: profile.preferences?.notifications?.fall_detection ?? true,
+          dailySummary: profile.preferences?.notifications?.dailySummary ?? true,
+          maintenanceReminders: profile.preferences?.notifications?.maintenanceReminders ?? true,
+        },
+        units: {
+          temperature: profile.preferences?.units?.temperature || 'celsius',
+          distance: profile.preferences?.units?.distance || 'metric',
+        },
+        security: {
+          biometric: profile.preferences?.security?.biometric ?? false,
+          twoFactor: profile.preferences?.security?.twoFactor ?? false,
+        }
+      }
     };
 
     log('info', reqId, '✅ /api/me PUT success', {
       email: merged.email,
+      theme: merged.preferences.theme,
       notifKeys: Object.keys(merged.preferences?.notifications || {}),
+      unitsKeys: Object.keys(merged.preferences?.units || {}),
     });
 
     return res.json(merged);
